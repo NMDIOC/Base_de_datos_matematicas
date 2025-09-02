@@ -1,33 +1,34 @@
 import streamlit as st
+import hashlib
 import json
 import os
-import hashlib
 
 # ========= Configuración ========= #
 DB_FILE = "usuarios.json"
 
+# Hashear contraseña
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Usuario admin (con contraseña cifrada)
+# Usuario administrador
 USERS = {
     "admin": hash_password("admin")
 }
 
-# ========= Funciones JSON ========= #
-def cargar_usuarios():
+# ========= Funciones de base de datos ========= #
+def cargar_datos():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f:
             return json.load(f)
-    return []
+    return {}
 
-def guardar_usuarios(usuarios):
+def guardar_datos(datos):
     with open(DB_FILE, "w") as f:
-        json.dump(usuarios, f, indent=4)
+        json.dump(datos, f, indent=4)
 
 # ========= Inicializar estado ========= #
 if "usuarios" not in st.session_state:
-    st.session_state["usuarios"] = cargar_usuarios()
+    st.session_state["usuarios"] = cargar_datos()
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "username" not in st.session_state:
@@ -35,10 +36,10 @@ if "username" not in st.session_state:
 
 # ========= Login ========= #
 def login():
-    st.subheader("🔑 Iniciar Sesión")
+    st.subheader("🔑 Iniciar Sesión (Admin)")
     username = st.text_input("Usuario")
     password = st.text_input("Contraseña", type="password")
-    if st.button("Entrar"):
+    if st.button("Iniciar Sesión"):
         if username in USERS and USERS[username] == hash_password(password):
             st.session_state["logged_in"] = True
             st.session_state["username"] = username
@@ -47,60 +48,75 @@ def login():
         else:
             st.error("❌ Usuario o contraseña incorrectos")
 
+# ========= Logout ========= #
 def logout():
     if st.button("Cerrar Sesión"):
         st.session_state["logged_in"] = False
         st.session_state["username"] = None
         st.rerun()
 
-# ========= Interfaz ========= #
-st.title("👥 Gestión de Usuarios y Tokens")
+# ========= App ========= #
+st.title("👥 Sistema de Usuarios y Tokens")
 
-# Mostrar lista de usuarios (igual para todos)
-st.subheader("📋 Lista de Usuarios")
-if len(st.session_state["usuarios"]) == 0:
-    st.info("No hay usuarios registrados aún.")
-else:
-    for i, usuario in enumerate(st.session_state["usuarios"]):
-        with st.container():
-            st.write(f"**{usuario['nombre']}** — Tokens: {usuario['tokens']}")
-            
-            if st.session_state["logged_in"]:
-                col1, col2, col3 = st.columns([1,1,1])
-                with col1:
-                    if st.button("➕ Token", key=f"add_token_{i}"):
-                        usuario["tokens"] += 1
-                        guardar_usuarios(st.session_state["usuarios"])
-                        st.rerun()
-                with col2:
-                    if st.button("➖ Token", key=f"remove_token_{i}"):
-                        if usuario["tokens"] > 0:
-                            usuario["tokens"] -= 1
-                            guardar_usuarios(st.session_state["usuarios"])
-                            st.rerun()
-                with col3:
-                    if st.button("🗑️ Eliminar Usuario", key=f"delete_user_{i}"):
-                        st.session_state["usuarios"].pop(i)
-                        guardar_usuarios(st.session_state["usuarios"])
-                        st.rerun()
-
-st.divider()
-
-# Opciones solo para admin
+# Modo administrador
 if st.session_state["logged_in"]:
-    st.subheader("➕ Añadir Usuario")
-    nuevo_usuario = st.text_input("Nombre del nuevo usuario")
-    if st.button("Añadir"):
-        if nuevo_usuario.strip():
-            st.session_state["usuarios"].append({"nombre": nuevo_usuario, "tokens": 0})
-            guardar_usuarios(st.session_state["usuarios"])
-            st.success(f"Usuario {nuevo_usuario} añadido correctamente ✅")
+    st.subheader("👑 Panel de Administración")
+
+    # Mostrar usuarios
+    st.write("📋 Lista de usuarios:")
+    st.table([{"Usuario": u, "Tokens": t} for u, t in st.session_state["usuarios"].items()])
+
+    # Añadir usuario
+    st.divider()
+    st.subheader("➕ Añadir usuario")
+    nuevo_usuario = st.text_input("Nombre de usuario")
+    if st.button("Añadir usuario"):
+        if nuevo_usuario and nuevo_usuario not in st.session_state["usuarios"]:
+            st.session_state["usuarios"][nuevo_usuario] = 0
+            guardar_datos(st.session_state["usuarios"])
+            st.success(f"Usuario {nuevo_usuario} añadido con 0 tokens")
             st.rerun()
         else:
-            st.warning("El nombre no puede estar vacío.")
+            st.error("❌ Usuario vacío o ya existente")
+
+    # Editar tokens
+    st.divider()
+    st.subheader("🎯 Editar tokens")
+    if st.session_state["usuarios"]:
+        usuario_sel = st.selectbox("Selecciona usuario", list(st.session_state["usuarios"].keys()))
+        cambio = st.number_input("Cambiar tokens (puede ser negativo)", step=1)
+        if st.button("Aplicar cambio"):
+            st.session_state["usuarios"][usuario_sel] += cambio
+            guardar_datos(st.session_state["usuarios"])
+            st.success(f"Tokens de {usuario_sel} actualizados")
+            st.rerun()
+    else:
+        st.info("⚠️ No hay usuarios registrados")
+
+    # Eliminar usuario
+    st.divider()
+    st.subheader("🗑️ Eliminar usuario")
+    if st.session_state["usuarios"]:
+        usuario_del = st.selectbox("Selecciona usuario a eliminar", list(st.session_state["usuarios"].keys()))
+        if st.button("Eliminar usuario"):
+            del st.session_state["usuarios"][usuario_del]
+            guardar_datos(st.session_state["usuarios"])
+            st.success(f"Usuario {usuario_del} eliminado")
+            st.rerun()
+    else:
+        st.info("⚠️ No hay usuarios para eliminar")
+
+    logout()
+
+# Modo usuario normal (sin login)
+else:
+    st.subheader("📊 Ranking de Usuarios y Tokens")
+    if st.session_state["usuarios"]:
+        usuarios_ordenados = sorted(st.session_state["usuarios"].items(), key=lambda x: x[1], reverse=True)
+        for usuario, tokens in usuarios_ordenados:
+            st.markdown(f"**👤 {usuario}** — 🎟️ {tokens} tokens")
+    else:
+        st.info("⚠️ Aún no hay usuarios registrados")
 
     st.divider()
-    logout()
-else:
-    st.info("🔒 Inicia sesión como admin para gestionar usuarios y tokens.")
     login()
