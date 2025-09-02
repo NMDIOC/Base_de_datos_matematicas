@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 import os
+import hashlib
 
 DB_FILE = "usuarios.json"
 
@@ -18,6 +19,17 @@ def guardar_datos(data):
 # ================= Inicialización ================= #
 if "usuarios" not in st.session_state:
     st.session_state["usuarios"] = cargar_datos()
+
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+# ================= Credenciales ================= #
+ADMIN_USER = "admin"
+# Hash de la contraseña "admin"
+ADMIN_PASS_HASH = hashlib.sha256("admin".encode()).hexdigest()
+
+def check_login(username, password):
+    return username == ADMIN_USER and hashlib.sha256(password.encode()).hexdigest() == ADMIN_PASS_HASH
 
 # ================= Funciones ================= #
 def agregar_usuario(nombre):
@@ -44,48 +56,66 @@ def modificar_tokens(nombre, cantidad):
     if nombre in st.session_state["usuarios"]:
         st.session_state["usuarios"][nombre]["tokens"] += cantidad
         if st.session_state["usuarios"][nombre]["tokens"] < 0:
-            st.session_state["usuarios"][nombre]["tokens"] = 0  # No permitir tokens negativos
+            st.session_state["usuarios"][nombre]["tokens"] = 0  # No negativos
         guardar_datos(st.session_state["usuarios"])
 
 # ================= Interfaz ================= #
 st.title("👥 Gestor de Usuarios y Tokens")
 
-# --- Añadir usuario --- #
-st.subheader("➕ Añadir Usuario")
-nuevo_usuario = st.text_input("Nombre del nuevo usuario")
-if st.button("Añadir Usuario", use_container_width=True):
-    if nuevo_usuario.strip() != "":
-        agregar_usuario(nuevo_usuario)
-    else:
-        st.warning("⚠️ El nombre no puede estar vacío.")
-
-st.divider()
-
-# --- Mostrar usuarios --- #
-st.subheader("📋 Lista de Usuarios")
-if st.session_state["usuarios"]:
-    for usuario, datos in st.session_state["usuarios"].items():
-        col1, col2, col3, col4, col5 = st.columns([2,1,1,1,1])
-        with col1:
-            nuevo_nombre = st.text_input(f"👤 Usuario:", value=usuario, key=f"edit_{usuario}")
-        with col2:
-            st.write(f"🎟️ Tokens: {datos['tokens']}")
-        with col3:
-            if st.button("➕", key=f"add_{usuario}"):
-                modificar_tokens(usuario, 1)
-                st.rerun()
-        with col4:
-            if st.button("➖", key=f"remove_{usuario}"):
-                modificar_tokens(usuario, -1)
-                st.rerun()
-        with col5:
-            if st.button("🗑️", key=f"delete_{usuario}"):
-                eliminar_usuario(usuario)
-                st.rerun()
-
-        # Guardar si el nombre cambió
-        if nuevo_nombre != usuario and nuevo_nombre.strip() != "":
-            editar_usuario(usuario, nuevo_nombre)
+# --- Login --- #
+if not st.session_state["logged_in"]:
+    st.subheader("🔑 Iniciar Sesión de Administrador")
+    usuario = st.text_input("Usuario")
+    clave = st.text_input("Contraseña", type="password")
+    if st.button("Iniciar Sesión"):
+        if check_login(usuario, clave):
+            st.session_state["logged_in"] = True
+            st.success("✅ Sesión iniciada con éxito")
             st.rerun()
+        else:
+            st.error("❌ Usuario o contraseña incorrectos")
 else:
-    st.info("📭 No hay usuarios registrados aún.")
+    st.sidebar.success(f"Conectado como: {ADMIN_USER}")
+    if st.sidebar.button("🚪 Cerrar Sesión"):
+        st.session_state["logged_in"] = False
+        st.rerun()
+
+    # --- Añadir usuario --- #
+    st.subheader("➕ Añadir Usuario")
+    nuevo_usuario = st.text_input("Nombre del nuevo usuario")
+    if st.button("Añadir Usuario", use_container_width=True):
+        if nuevo_usuario.strip() != "":
+            agregar_usuario(nuevo_usuario)
+        else:
+            st.warning("⚠️ El nombre no puede estar vacío.")
+
+    st.divider()
+
+    # --- Mostrar usuarios --- #
+    st.subheader("📋 Lista de Usuarios")
+    if st.session_state["usuarios"]:
+        for usuario, datos in st.session_state["usuarios"].items():
+            col1, col2, col3, col4, col5 = st.columns([2,1,1,1,1])
+            with col1:
+                nuevo_nombre = st.text_input(f"👤 Usuario:", value=usuario, key=f"edit_{usuario}")
+            with col2:
+                st.write(f"🎟️ Tokens: {datos['tokens']}")
+            with col3:
+                if st.button("➕", key=f"add_{usuario}"):
+                    modificar_tokens(usuario, 1)
+                    st.rerun()
+            with col4:
+                if st.button("➖", key=f"remove_{usuario}"):
+                    modificar_tokens(usuario, -1)
+                    st.rerun()
+            with col5:
+                if st.button("🗑️", key=f"delete_{usuario}"):
+                    eliminar_usuario(usuario)
+                    st.rerun()
+
+            # Guardar si el nombre cambió
+            if nuevo_nombre != usuario and nuevo_nombre.strip() != "":
+                editar_usuario(usuario, nuevo_nombre)
+                st.rerun()
+    else:
+        st.info("📭 No hay usuarios registrados aún.")
