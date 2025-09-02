@@ -1,122 +1,139 @@
 import streamlit as st
-import hashlib
 import json
 import os
+import hashlib
+import pandas as pd
 
-# ========= Configuración ========= #
 DB_FILE = "usuarios.json"
 
-# Hashear contraseña
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-# Usuario administrador
-USERS = {
-    "admin": hash_password("admin")
-}
-
-# ========= Funciones de base de datos ========= #
+# ================= Funciones para JSON ================= #
 def cargar_datos():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f:
             return json.load(f)
     return {}
 
-def guardar_datos(datos):
+def guardar_datos(data):
     with open(DB_FILE, "w") as f:
-        json.dump(datos, f, indent=4)
+        json.dump(data, f, indent=4)
 
-# ========= Inicializar estado ========= #
+# ================= Inicialización ================= #
 if "usuarios" not in st.session_state:
     st.session_state["usuarios"] = cargar_datos()
+
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
-if "username" not in st.session_state:
-    st.session_state["username"] = None
 
-# ========= Login ========= #
-def login():
-    st.subheader("🔑 Iniciar Sesión (Admin)")
-    username = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
-    if st.button("Iniciar Sesión"):
-        if username in USERS and USERS[username] == hash_password(password):
-            st.session_state["logged_in"] = True
-            st.session_state["username"] = username
-            st.success(f"Bienvenido, {username}")
-            st.rerun()
-        else:
-            st.error("❌ Usuario o contraseña incorrectos")
+# ================= Credenciales ================= #
+ADMIN_USER = "admin"
+# Hash de la contraseña "admin"
+ADMIN_PASS_HASH = hashlib.sha256("admin".encode()).hexdigest()
 
-# ========= Logout ========= #
-def logout():
-    if st.button("Cerrar Sesión"):
-        st.session_state["logged_in"] = False
-        st.session_state["username"] = None
-        st.rerun()
+def check_login(username, password):
+    return username == ADMIN_USER and hashlib.sha256(password.encode()).hexdigest() == ADMIN_PASS_HASH
 
-# ========= App ========= #
-st.title("👥 Sistema de Usuarios y Tokens")
-
-# Modo administrador
-if st.session_state["logged_in"]:
-    st.subheader("👑 Panel de Administración")
-
-    # Mostrar usuarios
-    st.write("📋 Lista de usuarios:")
-    st.table([{"Usuario": u, "Tokens": t} for u, t in st.session_state["usuarios"].items()])
-
-    # Añadir usuario
-    st.divider()
-    st.subheader("➕ Añadir usuario")
-    nuevo_usuario = st.text_input("Nombre de usuario")
-    if st.button("Añadir usuario"):
-        if nuevo_usuario and nuevo_usuario not in st.session_state["usuarios"]:
-            st.session_state["usuarios"][nuevo_usuario] = 0
-            guardar_datos(st.session_state["usuarios"])
-            st.success(f"Usuario {nuevo_usuario} añadido con 0 tokens")
-            st.rerun()
-        else:
-            st.error("❌ Usuario vacío o ya existente")
-
-    # Editar tokens
-    st.divider()
-    st.subheader("🎯 Editar tokens")
-    if st.session_state["usuarios"]:
-        usuario_sel = st.selectbox("Selecciona usuario", list(st.session_state["usuarios"].keys()))
-        cambio = st.number_input("Cambiar tokens (puede ser negativo)", step=1)
-        if st.button("Aplicar cambio"):
-            st.session_state["usuarios"][usuario_sel] += cambio
-            guardar_datos(st.session_state["usuarios"])
-            st.success(f"Tokens de {usuario_sel} actualizados")
-            st.rerun()
+# ================= Funciones ================= #
+def agregar_usuario(nombre):
+    if nombre in st.session_state["usuarios"]:
+        st.warning("⚠️ Ese usuario ya existe.")
     else:
-        st.info("⚠️ No hay usuarios registrados")
+        st.session_state["usuarios"][nombre] = {"tokens": 0}
+        guardar_datos(st.session_state["usuarios"])
+        st.success(f"✅ Usuario '{nombre}' añadido.")
 
-    # Eliminar usuario
-    st.divider()
-    st.subheader("🗑️ Eliminar usuario")
+def eliminar_usuario(nombre):
+    if nombre in st.session_state["usuarios"]:
+        del st.session_state["usuarios"][nombre]
+        guardar_datos(st.session_state["usuarios"])
+        st.success(f"🗑️ Usuario '{nombre}' eliminado.")
+
+def editar_usuario(nombre_antiguo, nombre_nuevo):
+    if nombre_antiguo in st.session_state["usuarios"]:
+        st.session_state["usuarios"][nombre_nuevo] = st.session_state["usuarios"].pop(nombre_antiguo)
+        guardar_datos(st.session_state["usuarios"])
+        st.success(f"✏️ Usuario '{nombre_antiguo}' renombrado a '{nombre_nuevo}'.")
+
+def modificar_tokens(nombre, cantidad):
+    if nombre in st.session_state["usuarios"]:
+        st.session_state["usuarios"][nombre]["tokens"] += cantidad
+        if st.session_state["usuarios"][nombre]["tokens"] < 0:
+            st.session_state["usuarios"][nombre]["tokens"] = 0  # No negativos
+        guardar_datos(st.session_state["usuarios"])
+
+# ================= Interfaz ================= #
+st.set_page_config(page_title="Gestor de Usuarios y Tokens", layout="wide")
+st.title("👥 Gestor de Usuarios y Tokens")
+
+# --- Login --- #
+if not st.session_state["logged_in"]:
+    with st.expander("🔑 Iniciar Sesión de Administrador"):
+        usuario = st.text_input("Usuario")
+        clave = st.text_input("Contraseña", type="password")
+        if st.button("Iniciar Sesión"):
+            if check_login(usuario, clave):
+                st.session_state["logged_in"] = True
+                st.success("✅ Sesión iniciada con éxito")
+                st.rerun()
+            else:
+                st.error("❌ Usuario o contraseña incorrectos")
+
+# --- Modo visitante (solo ver) --- #
+if not st.session_state["logged_in"]:
+    st.subheader("📋 Lista de Usuarios (solo lectura)")
     if st.session_state["usuarios"]:
-        usuario_del = st.selectbox("Selecciona usuario a eliminar", list(st.session_state["usuarios"].keys()))
-        if st.button("Eliminar usuario"):
-            del st.session_state["usuarios"][usuario_del]
-            guardar_datos(st.session_state["usuarios"])
-            st.success(f"Usuario {usuario_del} eliminado")
-            st.rerun()
+        df = pd.DataFrame(
+            [{"Usuario": u, "Tokens": d["tokens"]} for u, d in st.session_state["usuarios"].items()]
+        )
+        st.table(df)
     else:
-        st.info("⚠️ No hay usuarios para eliminar")
+        st.info("📭 No hay usuarios registrados aún.")
+    st.stop()
 
-    logout()
+# --- Modo admin (control total) --- #
+st.sidebar.success(f"Conectado como: {ADMIN_USER}")
+if st.sidebar.button("🚪 Cerrar Sesión"):
+    st.session_state["logged_in"] = False
+    st.rerun()
 
-# Modo usuario normal (sin login)
+# --- Añadir usuario --- #
+st.subheader("➕ Añadir Usuario")
+col1, col2 = st.columns([3,1])
+with col1:
+    nuevo_usuario = st.text_input("Nombre del nuevo usuario")
+with col2:
+    if st.button("Añadir Usuario", use_container_width=True):
+        if nuevo_usuario.strip() != "":
+            agregar_usuario(nuevo_usuario)
+        else:
+            st.warning("⚠️ El nombre no puede estar vacío.")
+
+st.divider()
+
+# --- Mostrar usuarios --- #
+st.subheader("📋 Lista de Usuarios (modo administrador)")
+if st.session_state["usuarios"]:
+    for usuario, datos in st.session_state["usuarios"].items():
+        col1, col2, col3, col4, col5 = st.columns([2,1,1,1,1])
+        with col1:
+            nuevo_nombre = st.text_input("👤 Nombre:", value=usuario, key=f"edit_{usuario}")
+        with col2:
+            st.metric(label="🎟️ Tokens", value=datos["tokens"])
+        with col3:
+            if st.button("➕", key=f"add_{usuario}"):
+                modificar_tokens(usuario, 1)
+                st.rerun()
+        with col4:
+            if st.button("➖", key=f"remove_{usuario}"):
+                modificar_tokens(usuario, -1)
+                st.rerun()
+        with col5:
+            if st.button("🗑️", key=f"delete_{usuario}"):
+                eliminar_usuario(usuario)
+                st.rerun()
+
+        # Renombrar usuario si cambió
+        if nuevo_nombre != usuario and nuevo_nombre.strip() != "":
+            editar_usuario(usuario, nuevo_nombre)
+            st.rerun()
 else:
-    st.subheader("📊 Ranking de Usuarios y Tokens")
-    if st.session_state["usuarios"]:
-        usuarios_ordenados = sorted(st.session_state["usuarios"].items(), key=lambda x: x[1], reverse=True)
-        for usuario, tokens in usuarios_ordenados:
-            st.markdown(f"**👤 {usuario}** — 🎟️ {tokens} tokens")
-    else:
-        st.info("⚠️ Aún no hay usuarios registrados")
-
-    st.divider()
-    login()
+    st.info("📭 No hay usuarios registrados aún.")
