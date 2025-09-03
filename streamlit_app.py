@@ -3,8 +3,7 @@ import json
 import os
 import hashlib
 import pandas as pd
-
-DB_FILE = "usuarios.json"
+from config import DB_FILE  # Importa la variable DB_FILE desde config.py
 
 # ================= Funciones para JSON ================= #
 def cargar_datos():
