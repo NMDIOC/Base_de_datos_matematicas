@@ -1,3 +1,12 @@
-# Archivo de configuración para variables globales
-
-DB_FILE = "usuarios.json"
+# Archivo generado automáticamente. No editar manualmente.
+USUARIOS_DATA = {
+    "usuario1": {
+        "tokens": 5
+    },
+    "usuario2": {
+        "tokens": 2
+    },
+    "admin": {
+        "tokens": 0
+    }
+}
